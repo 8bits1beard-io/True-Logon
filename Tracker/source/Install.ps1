@@ -31,13 +31,13 @@
     Joshua Walderbach
 
 .VERSION
-    2.0.3
+    2.0.4
 
 .CREATED
     2025-06-09
 
 .LASTUPDATED
-    2026-05-21
+    2026-05-22
 
 .PARAMETER Uninstall
     Switch parameter to remove the scheduled task, registry keys, and script files created by this system.
@@ -76,11 +76,28 @@ param (
     [switch]$WhatIf
 )
 
+# Force 64-bit on a 64-bit OS. Intune's IME can launch Win32 install commands
+# in 32-bit PowerShell depending on app config and host architecture; under
+# WOW64 every write to HKLM:\SOFTWARE\Walmart\... is silently redirected to
+# HKLM:\SOFTWARE\WOW6432Node\Walmart\..., and Detection (which runs 64-bit)
+# can't see those keys. Relaunch ourselves in 64-bit before doing anything.
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    $Relaunch = Join-Path -Path $env:SystemRoot -ChildPath 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    $RelaunchArgs = @('-ExecutionPolicy','Bypass','-NoProfile','-File',$PSCommandPath)
+    if ($Uninstall) { $RelaunchArgs += '-Uninstall' }
+    if ($WhatIf)    { $RelaunchArgs += '-WhatIf' }
+    & $Relaunch @RelaunchArgs
+    exit $LASTEXITCODE
+}
+
 $Script:RegistryPath = "HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon"
+# Path the registry root maps to when this script is ever (re-)launched under
+# WOW64 — covers pre-fix installs that wrote here and need migrating back.
+$Script:WowRegistryPath = "HKLM:\SOFTWARE\WOW6432Node\Walmart\WindowsEngineeringOS\TrueLogon"
 # Keep this value in sync with $Script:Config.ExpectedVersion in Tracker/Detection.ps1
 # and the Version field in both script headers. They must match exactly or
 # Detection will mark every install non-compliant and Intune will redeploy.
-$Script:Version = '2.0.3'
+$Script:Version = '2.0.4'
 $Script:CriticalErrors = @()
 
 # Users to never track or clean up. Must match $Script:DefaultExcludeUsers
@@ -337,6 +354,25 @@ if ($Uninstall) {
         Write-Host "$ScriptPath not found." -ForegroundColor Yellow
     }
 
+    # Remove WOW6432Node copy if a prior 32-bit Install run left one behind.
+    # Best-effort: failure here doesn't gate the uninstall exit code because
+    # the data is already orphaned (Detection only ever looks at the native hive).
+    if (Test-Path $Script:WowRegistryPath) {
+        try {
+            if ($WhatIf) {
+                Write-LogMessage -Message "[WHATIF] Would remove WOW6432Node registry key: $Script:WowRegistryPath" -Level Information
+                Write-Host "[WHATIF] Would remove WOW6432Node registry key: $Script:WowRegistryPath" -ForegroundColor Magenta
+            }
+            else {
+                Remove-Item -Path $Script:WowRegistryPath -Recurse -Force -ErrorAction Stop
+                Write-LogMessage -Message "WOW6432Node registry key removed: $Script:WowRegistryPath" -Level Information
+            }
+        }
+        catch {
+            Write-LogMessage -Message "Failed to remove WOW6432Node registry key '$Script:WowRegistryPath': $($_.Exception.Message)" -Level Warning
+        }
+    }
+
     # Remove registry key
     if (Test-Path $Script:RegistryPath) {
         try {
@@ -513,6 +549,52 @@ function Initialize-UserLogonRegistry {
     }
 }
 
+# One-shot migration: anything previously written by a 32-bit Install run is
+# sitting in WOW6432Node and is orphaned now that we're consistently 64-bit.
+# Copy its Version/ScriptHash and every S-1-5-21-* child (with Username,
+# LastLogon, ProfilePath) into the native hive, then remove the WOW6432Node
+# copy so we don't carry duplicate state. Preserves tracked LastLogon history
+# across the bitness fix; without this, every existing device would lose its
+# accumulated logon timestamps and re-seed from profile-folder LastWriteTime.
+if (-not $WhatIf -and (Test-Path $Script:WowRegistryPath)) {
+    try {
+        if (-not (Test-Path $Script:RegistryPath)) {
+            New-Item -Path $Script:RegistryPath -Force -ErrorAction Stop | Out-Null
+        }
+
+        $WowRoot = Get-ItemProperty -Path $Script:WowRegistryPath -ErrorAction SilentlyContinue
+        foreach ($PropName in @('Version','ScriptHash')) {
+            if ($WowRoot -and ($WowRoot.PSObject.Properties.Name -contains $PropName)) {
+                New-ItemProperty -Path $Script:RegistryPath -Name $PropName -Value $WowRoot.$PropName -PropertyType String -Force | Out-Null
+            }
+        }
+
+        $MigratedSids = 0
+        Get-ChildItem -Path $Script:WowRegistryPath -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^S-1-5-21-' } |
+            ForEach-Object {
+                $DestPath = Join-Path -Path $Script:RegistryPath -ChildPath $_.PSChildName
+                if (-not (Test-Path $DestPath)) {
+                    New-Item -Path $DestPath -Force | Out-Null
+                }
+                $Child = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+                foreach ($PropName in @('Username','LastLogon','ProfilePath')) {
+                    if ($Child -and ($Child.PSObject.Properties.Name -contains $PropName)) {
+                        New-ItemProperty -Path $DestPath -Name $PropName -Value $Child.$PropName -PropertyType String -Force | Out-Null
+                    }
+                }
+                $MigratedSids++
+            }
+
+        Remove-Item -Path $Script:WowRegistryPath -Recurse -Force -ErrorAction Stop
+        Write-LogMessage -Message "Migrated TrueLogon registry data from WOW6432Node to native hive ($MigratedSids user SID(s))" -Level Information
+    }
+    catch {
+        Write-LogMessage -Message "WOW6432Node migration failed: $($_.Exception.Message)" -Level Error
+        $Script:CriticalErrors += "WOW6432Node migration failed: $($_.Exception.Message)"
+    }
+}
+
 # Run the initialization
 Initialize-UserLogonRegistry -WhatIf:$WhatIf
 
@@ -540,6 +622,16 @@ try {
 
 # Define the logon tracking script content
 $TrueLogon_Script = @'
+# SYSTEM-scheduled-tasks normally launch the 64-bit PowerShell via System32's
+# PATH precedence, but belt-and-suspenders: if for any reason we end up in
+# 32-bit, relaunch so registry writes hit the native hive (and match what
+# Install.ps1 and Detection.ps1 expect).
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    $Relaunch = Join-Path -Path $env:SystemRoot -ChildPath 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    & $Relaunch -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File $PSCommandPath
+    exit $LASTEXITCODE
+}
+
 function Enable-TrueLogon {
     [CmdletBinding()]
     param (

@@ -30,8 +30,8 @@
 
 .NOTES
     Author: Joshua Walderbach
-    Version: 1.0.5
-    Updated: 2026-05-18
+    Version: 1.0.8
+    Updated: 2026-05-22
     Requires: Administrator privileges
     Log Path: C:\ProgramData\TrueLogon\Logs\TrueLogon-Remediation.log
     Exit 0:  Clean run (all targeted profiles removed successfully)
@@ -51,11 +51,24 @@ param(
     [string[]]$ExcludeUsers = @()
 )
 
+# Force 64-bit on a 64-bit OS so all our HKLM:\SOFTWARE\Walmart\... reads and
+# the Remove-Item on the SID key both hit the native hive (where Install.ps1
+# now writes). Under WOW64 we'd silently target WOW6432Node and either see
+# nothing to clean or remove the wrong hive.
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    $Relaunch = Join-Path -Path $env:SystemRoot -ChildPath 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    $RelaunchArgs = @('-ExecutionPolicy','Bypass','-NoProfile','-File',$PSCommandPath,'-DaysThreshold',$DaysThreshold)
+    if ($WhatIf) { $RelaunchArgs += '-WhatIf' }
+    foreach ($u in $ExcludeUsers) { $RelaunchArgs += @('-ExcludeUsers',$u) }
+    & $Relaunch @RelaunchArgs
+    exit $LASTEXITCODE
+}
+
 # ===================================================================================================
 # CONFIGURATION
 # ===================================================================================================
 
-$Script:Version = '1.0.5'
+$Script:Version = '1.0.8'
 
 # Users to never track or clean up. Must match $Script:DefaultExcludeUsers
 # in Tracker/Install.ps1 exactly.

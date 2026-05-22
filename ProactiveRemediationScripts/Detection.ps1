@@ -30,9 +30,9 @@
 
 .NOTES
     Author:  Joshua Walderbach
-    Version: 1.0.7
+    Version: 1.0.8
     Created: 2025-11-18
-    Updated: 2026-05-18
+    Updated: 2026-05-22
     Exit 0:  Compliant (no stale profiles, or TrueLogon not installed)
     Exit 1:  Non-compliant (one or more stale profiles, triggers remediation)
     Exit 2:  Critical error during detection
@@ -44,6 +44,15 @@ param(
     [ValidateRange(1, 3650)]
     [int]$DaysThreshold = 90
 )
+
+# Force 64-bit on a 64-bit OS. Intune's IME can launch Proactive Remediation
+# detections under WOW64, in which case every read of HKLM:\SOFTWARE\Walmart\...
+# is silently redirected to WOW6432Node and we'd miss the Tracker's data.
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    $Relaunch = Join-Path -Path $env:SystemRoot -ChildPath 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    & $Relaunch -ExecutionPolicy Bypass -NoProfile -File $PSCommandPath -DaysThreshold $DaysThreshold
+    exit $LASTEXITCODE
+}
 
 $ErrorActionPreference = 'Stop'
 

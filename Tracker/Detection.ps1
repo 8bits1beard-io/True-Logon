@@ -15,9 +15,9 @@
 
 .NOTES
     Author:  Joshua Walderbach
-    Version: 2.0.3
+    Version: 2.0.4
     Created: 2025-11-18
-    Updated: 2026-05-21
+    Updated: 2026-05-22
 
     Exit Codes:
     - 0: Fully compliant (all 5 components present and functional)
@@ -41,6 +41,16 @@
 
 [CmdletBinding()]
 param()
+
+# Force 64-bit on a 64-bit OS so registry reads see the native hive that
+# Install.ps1 writes to. If Intune launches this detection rule under WOW64,
+# every HKLM:\SOFTWARE\Walmart\... read would be redirected to WOW6432Node
+# and report the install as missing.
+if (-not [Environment]::Is64BitProcess -and [Environment]::Is64BitOperatingSystem) {
+    $Relaunch = Join-Path -Path $env:SystemRoot -ChildPath 'Sysnative\WindowsPowerShell\v1.0\powershell.exe'
+    & $Relaunch -ExecutionPolicy Bypass -NoProfile -File $PSCommandPath
+    exit $LASTEXITCODE
+}
 
 #region Logging Function
 function Write-LogMessage {
@@ -147,7 +157,7 @@ $Script:Config = @{
     # Must match $Script:Version in Tracker/Install.ps1 and the Version field
     # in both script headers. They must match exactly or Detection will mark
     # every install non-compliant and Intune will redeploy.
-    ExpectedVersion = "2.0.3"
+    ExpectedVersion = "2.0.4"
     RequiredComponents = 5      # Total number of components to validate
 }
 

@@ -51,7 +51,7 @@ Once `Install.ps1` runs successfully on a device, the following artifacts exist:
 | Tracker script | `C:\ProgramData\TrueLogon\TrueLogon.ps1` |
 | Scheduled task | `TrueLogon` (AtLogon trigger, runs as SYSTEM) |
 | Registry root | `HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon` |
-| Version marker | `HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon\Version` (e.g. `2.0.3`) |
+| Version marker | `HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon\Version` (e.g. `2.0.4`) |
 | Script integrity hash | `HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon\ScriptHash` (SHA256 of the tracker file) |
 | Per-user logon record | `HKLM:\SOFTWARE\Walmart\WindowsEngineeringOS\TrueLogon\{S-1-5-21-...}` — `Username`, `LastLogon`, `ProfilePath` |
 | Log directory | `C:\ProgramData\TrueLogon\Logs\` |
