@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80">
+  <defs>
+    <!-- Gradient for the icon -->
+    <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078D4"/>
+      <stop offset="100%" style="stop-color:#005A9E"/>
+    </linearGradient>
+    <!-- Gradient for checkmark -->
+    <linearGradient id="checkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00B294"/>
+      <stop offset="100%" style="stop-color:#008272"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="40" cy="40" r="36" fill="url(#iconGradient)"/>
+  
+  <!-- User silhouette -->
+  <circle cx="40" cy="28" r="10" fill="white"/>
+  <path d="M 22 56 Q 22 42 40 42 Q 58 42 58 56" fill="white"/>
+  
+  <!-- Clock overlay -->
+  <circle cx="58" cy="56" r="15" fill="white" stroke="url(#iconGradient)" stroke-width="2.5"/>
+  <circle cx="58" cy="56" r="1.5" fill="#0078D4"/>
+  <!-- Clock hands -->
+  <line x1="58" y1="56" x2="58" y2="47" stroke="#0078D4" stroke-width="2" stroke-linecap="round"/>
+  <line x1="58" y1="56" x2="65" y2="56" stroke="#0078D4" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Checkmark badge -->
+  <circle cx="22" cy="56" r="10" fill="url(#checkGradient)"/>
+  <polyline points="16,56 20,60 29,51" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Text: True Logon -->
+  <text x="90" y="50" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="600" fill="#0078D4">True</text>
+  <text x="168" y="50" font-family="Segoe UI, Arial, sans-serif" font-size="32" font-weight="400" fill="#24292f">Logon</text>
+</svg>
